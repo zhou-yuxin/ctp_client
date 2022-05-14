@@ -19,7 +19,7 @@ class SpiHelper:
         if not self._event.wait(timeout):
             self._error = "%s超时" % operation_name
         if self._error:
-            raise Exception(self._error)
+            raise TimeoutError(self._error)
 
     def notifyCompletion(self, error = None):
         self._error = error
@@ -31,7 +31,7 @@ class SpiHelper:
 
     def checkApiReturn(self, ret):
         if ret != 0:
-            raise Exception(self._cvtApiRetToError(ret))
+            raise RuntimeError(self._cvtApiRetToError(ret))
 
     def checkApiReturnInCallback(self, ret):
         if ret != 0:
@@ -110,7 +110,6 @@ class QuoteImpl(SpiHelper, CTP.MdApiPy):
 class TraderImpl(SpiHelper, CTP.TraderApiPy):
 
     MAX_TIMEOUT = 10
-    MAX_TIMEOUT_QryInstrument = 60
 
     def __init__(self, front, broker_id, flow_dir, app_id, auth_code, user_id, password):
         SpiHelper.__init__(self)
@@ -132,7 +131,17 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self.resetCompletion()
         self._limitFrequency()
         self.checkApiReturn(self.ReqQryInstrument(CTPStruct.QryInstrumentField(), 3))
-        self.waitCompletion(self.MAX_TIMEOUT_QryInstrument, "获取所有合约")
+        last_count = 0
+        while True:
+            try:
+                self.waitCompletion(self.MAX_TIMEOUT, "获取所有合约")
+                break
+            except TimeoutError as e:
+                new_count = len(self._map_code_to_exchange)
+                if new_count == last_count:
+                    raise e
+                logging.info("已获取%d个合约..." % new_count)
+                last_count = new_count
         self._map_order_to_code = {}
         self.resetCompletion()
         field = CTPStruct.QryOrderField(BrokerID = self._broker_id,
@@ -256,7 +265,8 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         if quantity == 0:
             return
         self._positions.append({"code": code, "direction": direction,
-                    "quantity": quantity, "margin": position.UseMargin})
+                    "quantity": quantity, "margin": position.UseMargin,
+                    "cost": position.OpenCost})
 
     def OnRspQryInvestorPosition(self, field, info, req_id, is_last):
         assert(req_id == 6)
