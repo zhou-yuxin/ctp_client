@@ -90,8 +90,27 @@ class QuoteImpl(SpiHelper, CTP.MdApiPy):
             self.notifyCompletion()
 
     def OnRtnDepthMarketData(self, field):
-        if self._receiver:
-            self._receiver(field)
+        if not self._receiver:
+            return
+        f = lambda x: None if x > 1.797e+308 else x
+        self._receiver({"code": field.InstrumentID, "price": f(field.LastPrice),
+                "open": f(field.OpenPrice), "close": f(field.ClosePrice),
+                "highest": f(field.HighestPrice), "lowest": f(field.LowestPrice),
+                "upper_limit": f(field.UpperLimitPrice), "lower_limit": f(field.LowerLimitPrice),
+                "settlement": f(field.SettlementPrice), "volume": field.Volume,
+                "turnover": field.Turnover, "open_interest": int(field.OpenInterest),
+                "pre_close": f(field.PreClosePrice), "pre_settlement": f(field.PreSettlementPrice),
+                "pre_open_interest": int(field.PreOpenInterest),
+                "ask1": (f(field.AskPrice1), field.AskVolume1),
+                "bid1": (f(field.BidPrice1), field.BidVolume1),
+                "ask2": (f(field.AskPrice2), field.AskVolume2),
+                "bid2": (f(field.BidPrice2), field.BidVolume2),
+                "ask3": (f(field.AskPrice3), field.AskVolume3),
+                "bid3": (f(field.BidPrice3), field.BidVolume3),
+                "ask4": (f(field.AskPrice4), field.AskVolume4),
+                "bid4": (f(field.BidPrice4), field.BidVolume4),
+                "ask5": (f(field.AskPrice5), field.AskVolume5),
+                "bid5": (f(field.BidPrice5), field.BidVolume5)})
 
     def unsubscribe(self, codes):
         self.resetCompletion()
@@ -215,19 +234,18 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         return self._orders
 
     def _gotOrder(self, order):
-        (direction, quantity) = (int(order.Direction), order.VolumeTotalOriginal)
+        (direction, volume) = (int(order.Direction), order.VolumeTotalOriginal)
         assert(direction in (0, 1))
         if order.CombOffsetFlag == '1':     #THOST_FTDC_OFEN_Close
             direction = 1 - direction
-            quantity = -quantity
+            volume = -volume
         direction = "short" if direction else "long"
         #THOST_FTDC_OST_Unknown = a, THOST_FTDC_OST_PartTradedQueueing = 1
         #THOST_FTDC_OST_NoTradeQueueing = 3
         is_active = order.OrderStatus in ('a', '1', '3')
-        self._orders[order.OrderSysID] = {"code": order.InstrumentID,
-                "exchange_id": order.ExchangeID, "direction": direction,
-                "quantity": quantity, "price": order.LimitPrice,
-                "quantity_traded": order.VolumeTraded, "is_active": is_active}
+        self._orders[order.OrderSysID] = {"code": order.InstrumentID, "direction": direction,
+                "price": order.LimitPrice, "volume": volume, 
+                "volume_traded": order.VolumeTraded, "is_active": is_active}
 
     def OnRspQryOrder(self, field, info, req_id, is_last):
         assert(req_id in (4, 5))
@@ -261,11 +279,11 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             direction = "short"
         else:
             return
-        quantity = position.Position
-        if quantity == 0:
+        volume = position.Position
+        if volume == 0:
             return
         self._positions.append({"code": code, "direction": direction,
-                    "quantity": quantity, "margin": position.UseMargin,
+                    "volume": volume, "margin": position.UseMargin,
                     "cost": position.OpenCost})
 
     def OnRspQryInvestorPosition(self, field, info, req_id, is_last):
@@ -279,7 +297,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             logging.info("已获取所有持仓...")
             self.notifyCompletion()
 
-    def _order(self, code, direction, quantity, price, min_quantity):
+    def _order(self, code, direction, volume, price, min_volume):
         if code not in self._map_code_to_exchange:
             raise Exception("合约<%s>不存在！" % code)
         exchange_id = self._map_code_to_exchange[code]
@@ -289,29 +307,29 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             direction = 1               #THOST_FTDC_D_Sell
         else:
             raise Exception("错误的买卖方向<%s>" % direction)
-        if quantity != int(quantity) or quantity == 0:
-            raise Exception("交易数量<%s>必须是非零整数" % quantity)
-        if quantity > 0:
+        if volume != int(volume) or volume == 0:
+            raise Exception("交易数量<%s>必须是非零整数" % volume)
+        if volume > 0:
             offset_flag = '0'           #THOST_FTDC_OFEN_Open
         else:
             offset_flag = '1'           #THOST_FTDC_OFEN_Close
-            quantity = -quantity
+            volume = -volume
             direction = 1 - direction
         direction = str(direction)
-        if min_quantity == 0:
+        if min_volume == 0:
             time_cond = '3'             #THOST_FTDC_TC_GFD
             volume_cond = '1'           #THOST_FTDC_VC_AV
         else:
-            min_quantity = abs(min_quantity)
-            if min_quantity > quantity:
-                raise Exception("最小成交量<%s>不能超过交易数量<%s>" % (min_quantity, quantity))
+            min_volume = abs(min_volume)
+            if min_volume > volume:
+                raise Exception("最小成交量<%s>不能超过交易数量<%s>" % (min_volume, volume))
             time_cond = '1'             #THOST_FTDC_TC_IOC
             volume_cond = '2'           #THOST_FTDC_VC_MV
         field = CTPStruct.InputOrderField(BrokerID = self._broker_id,
                 InvestorID = self._user_id, ExchangeID = exchange_id, InstrumentID = code,
                 Direction = direction, CombOffsetFlag = offset_flag,
                 TimeCondition = time_cond, VolumeCondition = volume_cond,
-                VolumeTotalOriginal = quantity, MinVolume = min_quantity,
+                VolumeTotalOriginal = volume, MinVolume = min_volume,
                 CombHedgeFlag = '1',        #THOST_FTDC_HF_Speculation
                 ContingentCondition = '1',  #THOST_FTDC_CC_Immediately
                 ForceCloseReason = '0',     #THOST_FTDC_FCC_NotForceClose
@@ -358,7 +376,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             self.notifyCompletion(order.StatusMsg)
             return
         logging.info("已执行FAK单，成交量：%d" % order.VolumeTraded)
-        self._traded_quantity = order.VolumeTraded
+        self._volume_traded = order.VolumeTraded
         self.notifyCompletion()
 
     def OnRtnOrder(self, field):
@@ -372,18 +390,18 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             self.notifyCompletion("未知报单类型")
         self._map_order_to_code[field.OrderSysID] = field.InstrumentID
 
-    def orderLimit(self, code, direction, quantity, price):
-        self._order(code, direction, quantity, price, 0)
+    def orderLimit(self, code, direction, volume, price):
+        self._order(code, direction, volume, price, 0)
         return self._order_id
 
-    def orderFAK(self, code, direction, quantity, price, min_quantity):
-        if min_quantity == 0:
-            min_quantity = 1
-        self._order(code, direction, quantity, price, min_quantity)
-        return self._traded_quantity
+    def orderFAK(self, code, direction, volume, price, min_volume):
+        if min_volume == 0:
+            min_volume = 1
+        self._order(code, direction, volume, price, min_volume)
+        return self._volume_traded
 
-    def orderFOK(self, code, direction, quantity, price):
-        return self.orderFAK(code, direction, quantity, price, quantity)
+    def orderFOK(self, code, direction, volume, price):
+        return self.orderFAK(code, direction, volume, price, volume)
 
     def deleteOrder(self, order_id):
         if order_id not in self._map_order_to_code:
@@ -433,14 +451,14 @@ class Client:
     def getPositions(self):
         return self._td.getPositions()
 
-    def orderLimit(self, code, direction, quantity, price):
-        return self._td.orderLimit(code, direction, quantity, price)
+    def orderLimit(self, code, direction, volume, price):
+        return self._td.orderLimit(code, direction, volume, price)
 
-    def orderFAK(self, code, direction, quantity, price, min_quantity):
-        return self._td.orderFAK(code, direction, quantity, price, min_quantity)
+    def orderFAK(self, code, direction, volume, price, min_volume):
+        return self._td.orderFAK(code, direction, volume, price, min_volume)
 
-    def orderFOK(self, code, direction, quantity, price):
-        return self._td.orderFOK(code, direction, quantity, price)
+    def orderFOK(self, code, direction, volume, price):
+        return self._td.orderFOK(code, direction, volume, price)
 
     def deleteOrder(self, order_id):
         self._td.deleteOrder(order_id)
