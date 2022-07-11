@@ -331,29 +331,32 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         if (order.FrontID, order.SessionID, order_ref) !=               \
                 (self._front_id, self._session_id, self._order_ref):
             return False
-        print(order)
+        logging.debug(order)
         if order.OrderStatus == 'a':                #THOST_FTDC_OST_Unknown
             return False
+        if order.OrderSubmitStatus == '4':          #THOST_FTDC_OSS_InsertRejected
+            self.notifyCompletion(order.StatusMsg)
+            return True
         if order.TimeCondition == '1':              #THOST_FTDC_TC_IOC
             #THOST_FTDC_OST_AllTraded = 0, THOST_FTDC_OST_Canceled = 5
-            assert(order.OrderStatus in ('0', '5'))
-            logging.info("已执行IOC单，成交量：%d" % order.VolumeTraded)
-            self._traded_volume = order.VolumeTraded
-            self.notifyCompletion()
+            if order.OrderStatus in ('0', '5'):
+                logging.info("已执行IOC单，成交量：%d" % order.VolumeTraded)
+                self._traded_volume = order.VolumeTraded
+                self.notifyCompletion()
+                return True
         else:
             assert(order.TimeCondition == '3')      #THOST_FTDC_TC_GFD
-            if order.OrderSubmitStatus != '3':      #THOST_FTDC_OSS_Accepted
-                self.notifyCompletion(order.StatusMsg)
+            if order.OrderSubmitStatus == '3':      #THOST_FTDC_OSS_Accepted
+                #THOST_FTDC_OST_AllTraded = 0, THOST_FTDC_OST_PartTradedQueueing = 1
+                #THOST_FTDC_OST_PartTradedNotQueueing = 2, THOST_FTDC_OST_NoTradeQueueing = 3
+                #THOST_FTDC_OST_NoTradeNotQueueing = 4, THOST_FTDC_OST_Canceled = 5
+                assert(order.OrderStatus in ('0', '1', '2', '3', '4', '5'))
+                assert(len(order.OrderSysID) != 0)
+                self._order_id = "%s@%s" % (order.OrderSysID, order.InstrumentID)
+                logging.info("已提交限价单（单号：<%s>）" % self._order_id)
+                self.notifyCompletion()
                 return True
-            #THOST_FTDC_OST_AllTraded = 0, THOST_FTDC_OST_PartTradedQueueing = 1
-            #THOST_FTDC_OST_PartTradedNotQueueing = 2, THOST_FTDC_OST_NoTradeQueueing = 3
-            #THOST_FTDC_OST_NoTradeNotQueueing = 4, THOST_FTDC_OST_Canceled = 5
-            assert(order.OrderStatus in ('0', '1', '2', '3', '4', '5'))
-            assert(len(order.OrderSysID) != 0)
-            self._order_id = "%s@%s" % (order.OrderSysID, order.InstrumentID)
-            logging.info("已提交限价单（单号：<%s>）" % self._order_id)
-            self.notifyCompletion()
-        return True
+        return False
 
     def _order(self, code, direction, volume, price, min_volume):
         if code not in self._map_code_to_exchange:
@@ -374,17 +377,24 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             volume = -volume
             direction = 1 - direction
         direction = str(direction)
+        #Market Price Order
         if price == 0:
-            #Market Price Order: THOST_FTDC_OPT_AnyPrice, THOST_FTDC_TC_IOC, THOST_FTDC_VC_AV
-            (price_type, time_cond, volume_cond) = ('1', '1', '1')
+            if exchange == "CFFEX":
+                price_type = 'G'        #THOST_FTDC_OPT_FiveLevelPrice
+            else:
+                price_type = '1'        #THOST_FTDC_OPT_AnyPrice
+            #THOST_FTDC_TC_IOC, THOST_FTDC_VC_AV
+            (time_cond, volume_cond) = ('1', '1')
+        #Limit Price Order
         elif min_volume == 0:
-            #Limit Price Order: THOST_FTDC_OPT_LimitPrice, THOST_FTDC_TC_GFD, THOST_FTDC_VC_AV
+            #THOST_FTDC_OPT_LimitPrice, THOST_FTDC_TC_GFD, THOST_FTDC_VC_AV
             (price_type, time_cond, volume_cond) = ('2', '3', '1')
-        else:
+        #FAK Order
+        else: 
             min_volume = abs(min_volume)
             if min_volume > volume:
                 raise ValueError("最小成交量<%s>不能超过交易数量<%s>" % (min_volume, volume))
-            #FAK Order: THOST_FTDC_OPT_LimitPrice, THOST_FTDC_TC_IOC, THOST_FTDC_VC_MV
+            #THOST_FTDC_OPT_LimitPrice, THOST_FTDC_TC_IOC, THOST_FTDC_VC_MV
             (price_type, time_cond, volume_cond) = ('2', '1', '2')
         self._order_ref += 1
         self._order_action = self._handleNewOrder
@@ -432,7 +442,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         oid = "%s@%s" % (order.OrderSysID, order.InstrumentID)
         if oid != self._order_id:
             return False
-        print(order)
+        logging.debug(order)
         if order.OrderSubmitStatus == '5':      #THOST_FTDC_OSS_CancelRejected
             self.notifyCompletion(order.StatusMsg)
             return True
