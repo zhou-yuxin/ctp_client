@@ -390,7 +390,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             #THOST_FTDC_OPT_LimitPrice, THOST_FTDC_TC_GFD, THOST_FTDC_VC_AV
             (price_type, time_cond, volume_cond) = ('2', '3', '1')
         #FAK Order
-        else: 
+        else:
             min_volume = abs(min_volume)
             if min_volume > volume:
                 raise ValueError("最小成交量<%s>不能超过交易数量<%s>" % (min_volume, volume))
