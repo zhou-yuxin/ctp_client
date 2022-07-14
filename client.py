@@ -261,6 +261,8 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         return self._orders
 
     def _gotOrder(self, order):
+        if len(order.OrderSysID) == 0:
+            return
         oid = "%s@%s" % (order.OrderSysID, order.InstrumentID)
         (direction, volume) = (int(order.Direction), order.VolumeTotalOriginal)
         assert(direction in (0, 1))
@@ -270,6 +272,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         direction = "short" if direction else "long"
         #THOST_FTDC_OST_AllTraded = 0, THOST_FTDC_OST_Canceled = 5
         is_active = order.OrderStatus not in ('0', '5')
+        assert(oid not in self._orders)
         self._orders[oid] = {"code": order.InstrumentID, "direction": direction,
                 "price": order.LimitPrice, "volume": volume, 
                 "volume_traded": order.VolumeTraded, "is_active": is_active}
