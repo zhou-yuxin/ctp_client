@@ -1,6 +1,6 @@
 # ctp_client
 
-基于ctpwrapper的客户端接口，做国内期货和期权量化交易的神器。
+基于[ctpwrapper](https://github.com/nooperpudd/ctpwrapper)的客户端接口，做国内期货和期权量化交易的神器。
 
 ## 准备工作：
 
@@ -24,11 +24,10 @@ pip install ctpwrapper==6.6.1
 
 ### >>> 构造函数：
 ```
-def __init__(self, md_front, td_front, md_flow_dir, td_flow_dir,
-            broker_id, app_id, auth_code, user_id, password)
+def __init__(self, md_front, td_front, broker_id, app_id, auth_code, user_id, password)
 ```
 md_front和td_front分别是服务器地址，比如上期技术提供的仿真平台Simnow（全天候版）地址是"tcp://180.168.146.187:10131"和
-"tcp://180.168.146.187:10130"。md_flow_dir和td_flow_dir是行情数据流与交易数据流存放的本地目录，必须事先创建好，而且必须以'/'结尾。比如创建了/home/yuxin/my_dir，那么字符串必须设为"/home/yuxin/my_dir/"。broker_id是每个期货公司自定义的，需要向其索取。app_id和auth_code是向期货公司申请开通CTP权限（看穿式监管）时设定的。user_id和password就是期货账户和密码。
+"tcp://180.168.146.187:10130"。broker_id是每个期货公司自定义的，需要向其索取。app_id和auth_code是向期货公司申请开通CTP权限（看穿式监管）时设定的。user_id和password就是期货账户和密码。
 
 ### >>> 订阅/取消订阅
 ```
@@ -89,7 +88,7 @@ def getPositions(self)
 ```
 def getOrders(self)
 ```
-返回一个dict，键为订单号，值是一个dict，表示一笔订单，包含如下字段：
+返回一个dict，每一个值是一个dict，表示一笔订单，包含如下字段：
 |  字段           |  类型                       |  含义                   |
 | :-------------- | :------------------------- | :-----------------------|
 |  code           |  str                       |  合约代码                |
@@ -99,19 +98,19 @@ def getOrders(self)
 |  volume_traded  |  int                       |  已成交数量              |
 |  is_active      |  bool                      |  是否活跃                |
 
-is_active若为False，则表示该订单已经不再有效，不会再有新的成交，通常情况为全部成交、已撤单或者废单。需要注意dict的键（订单号），虽然是一个内容为整数的字符串，而且通常开头有若干个空格，但不要随意截断，CTP系统只认特定长度的字符串表示的订单号。
+is_active若为False，则表示该订单已经不再有效，不会再有新的成交，通常情况为全部成交、已撤单或者废单。需要注意dict的键格式为“订单号@合约号”，因为不同交易所的订单号是各自独立的，存在相同的可能，因此需要用合约号加以区分。其中，虽然合约号是一个内容为整数的字符串，但通常开头有若干个空格，且不能随意截断，CTP系统只认特定长度的字符串表示的订单号。
 
 ### >>> 提交限价单
 ```
 def orderLimit(self, code, direction, volume, price)
 ```
-code为合约代码，direction为字符串"long"或者"short"之一，表示多头或空头。volume为正整数，表示数量。price为float类型的价格。提交成功返回订单号。
+code为合约代码，direction为字符串"long"或者"short"之一，表示多头或空头。volume为整数，表示交易数量，正数表示该方向加仓，负数表示该方向减仓。price为float类型的价格。提交成功返回“订单号@合约号”。
 
 ### >>> 撤单
 ```
 def deleteOrder(self, order_id)
 ```
-已提交未完全成交的限价单可以撤单。order_id为orderLimit()返回的订单号。
+已提交未完全成交的限价单可以撤单。order_id为orderLimit()的返回值。
 
 ### >>> 提交FAK单
 ```
@@ -123,4 +122,10 @@ FAK（Fill and Kill）是一种特殊的报单类型，该报单被交易所接�
 ```
 def orderFOK(self, code, direction, volume, price)
 ```
-FOK（Fill or Kill）是一种特殊的报单类型，该报单被交易所接收后，交易所会扫描市场行情，如果在当时的市场行情下该报单可以立即全部成交，否则立即全部撤销。可以把FOK看作min_volume = volume的FAK。
+FOK（Fill or Kill）是一种特殊的报单类型，该报单被交易所接收后，交易所会扫描市场行情，如果在当时的市场行情下该报单可以立即全部成交，否则立即全部撤销。可以把FOK看作min_volume = volume的FAK。返回要么0，要么volume。
+
+### >>> 提交市价单
+```
+def orderMarket(self, code, direction, volume)
+```
+市价单不指定价格，而是以当前市场价格成交，能成交多少就成交多少，剩余未成交的撤单。返回成交数量，介于[0, volume]之间。
