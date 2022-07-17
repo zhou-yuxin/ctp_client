@@ -487,13 +487,8 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
 class Client:
 
     def __init__(self, md_front, td_front, broker_id, app_id, auth_code, user_id, password):
-        self._md = None
-        self._td = None
         self._md = QuoteImpl(md_front)
         self._td = TraderImpl(td_front, broker_id, app_id, auth_code, user_id, password)
-
-    def __del__(self):
-        del self._md, self._td
 
     def setReceiver(self, func):
         self._md.setReceiver(func)
