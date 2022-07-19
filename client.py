@@ -3,8 +3,7 @@ import time
 import logging
 import threading
 import ctpwrapper as CTP
-
-from ctpwrapper import ApiStructure as CTPStruct
+import ctpwrapper.ApiStructure as CTPStruct
 
 MAX_TIMEOUT = 10
 DATA_DIR = "ctp_client_data/"
