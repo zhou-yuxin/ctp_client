@@ -493,6 +493,9 @@ class Client:
         self._md.setReceiver(func)
 
     def subscribe(self, codes):
+        for code in codes:
+            if code not in self._td._map_code_to_exchange:
+                raise ValueError("合约<%s>不存在" % code)
         self._md.subscribe(codes)
 
     def unsubscribe(self, codes):
