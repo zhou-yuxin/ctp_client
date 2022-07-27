@@ -77,7 +77,9 @@ class QuoteImpl(SpiHelper, CTP.MdApiPy):
         self.notifyCompletion()
 
     def setReceiver(self, func):
+        old_func = self._receiver
         self._receiver = func
+        return old_func
 
     def subscribe(self, codes):
         self.resetCompletion()
@@ -490,7 +492,7 @@ class Client:
         self._td = TraderImpl(td_front, broker_id, app_id, auth_code, user_id, password)
 
     def setReceiver(self, func):
-        self._md.setReceiver(func)
+        return self._md.setReceiver(func)
 
     def subscribe(self, codes):
         for code in codes:
