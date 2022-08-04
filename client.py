@@ -253,11 +253,30 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             logging.info("已获取所有合约...")
             self.notifyCompletion()
 
+    def getAccount(self):
+        #THOST_FTDC_BZTP_Future = 1
+        field = CTPStruct.QryTradingAccountField(BrokerID = self._broker_id,
+                InvestorID = self._user_id, CurrencyID = "CNY", BizType = '1')
+        self.resetCompletion()
+        self._limitFrequency()
+        self.checkApiReturn(self.ReqQryTradingAccount(field, 8))
+        self.waitCompletion("获取资金账户")
+        return self._account
+
+    def OnRspQryTradingAccount(self, field, info, req_id, is_last):
+        assert(req_id == 8)
+        assert(is_last)
+        if not self.checkRspInfoInCallback(info):
+            return
+        self._account = {"balance": field.Balance, "margin": field.CurrMargin, "available": field.Available}
+        logging.info("已获取资金账户...")
+        self.notifyCompletion()
+
     def getOrders(self):
         self._orders = {}
-        self.resetCompletion()
         field = CTPStruct.QryOrderField(BrokerID = self._broker_id,
                 InvestorID = self._user_id)
+        self.resetCompletion()
         self._limitFrequency()
         self.checkApiReturn(self.ReqQryOrder(field, 4))
         self.waitCompletion("获取所有报单")
@@ -293,9 +312,9 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
 
     def getPositions(self):
         self._positions = []
-        self.resetCompletion()
         field = CTPStruct.QryInvestorPositionField(BrokerID = self._broker_id,
                 InvestorID = self._user_id)
+        self.resetCompletion()
         self._limitFrequency()
         self.checkApiReturn(self.ReqQryInvestorPosition(field, 5))
         self.waitCompletion("获取所有持仓")
@@ -504,6 +523,9 @@ class Client:
 
     def unsubscribe(self, codes):
         self._md.unsubscribe(codes)
+
+    def getAccount(self):
+        return self._td.getAccount()
 
     def getOrders(self):
         return self._td.getOrders()
