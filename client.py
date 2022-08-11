@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import logging
 import threading
@@ -7,6 +8,8 @@ import ctpwrapper.ApiStructure as CTPStruct
 
 MAX_TIMEOUT = 10
 DATA_DIR = "ctp_client_data/"
+
+FILTER = lambda x: None if x > 1.797e+308 else x
 
 class SpiHelper:
 
@@ -98,25 +101,26 @@ class QuoteImpl(SpiHelper, CTP.MdApiPy):
     def OnRtnDepthMarketData(self, field):
         if not self._receiver:
             return
-        f = lambda x: None if x > 1.797e+308 else x
-        self._receiver({"code": field.InstrumentID, "price": f(field.LastPrice),
-                "open": f(field.OpenPrice), "close": f(field.ClosePrice),
-                "highest": f(field.HighestPrice), "lowest": f(field.LowestPrice),
-                "upper_limit": f(field.UpperLimitPrice), "lower_limit": f(field.LowerLimitPrice),
-                "settlement": f(field.SettlementPrice), "volume": field.Volume,
+        self._receiver({"code": field.InstrumentID, "price": FILTER(field.LastPrice),
+                "open": FILTER(field.OpenPrice), "close": FILTER(field.ClosePrice),
+                "highest": FILTER(field.HighestPrice), "lowest": FILTER(field.LowestPrice),
+                "upper_limit": FILTER(field.UpperLimitPrice),
+                "lower_limit": FILTER(field.LowerLimitPrice),
+                "settlement": FILTER(field.SettlementPrice), "volume": field.Volume,
                 "turnover": field.Turnover, "open_interest": int(field.OpenInterest),
-                "pre_close": f(field.PreClosePrice), "pre_settlement": f(field.PreSettlementPrice),
+                "pre_close": FILTER(field.PreClosePrice),
+                "pre_settlement": FILTER(field.PreSettlementPrice),
                 "pre_open_interest": int(field.PreOpenInterest),
-                "ask1": (f(field.AskPrice1), field.AskVolume1),
-                "bid1": (f(field.BidPrice1), field.BidVolume1),
-                "ask2": (f(field.AskPrice2), field.AskVolume2),
-                "bid2": (f(field.BidPrice2), field.BidVolume2),
-                "ask3": (f(field.AskPrice3), field.AskVolume3),
-                "bid3": (f(field.BidPrice3), field.BidVolume3),
-                "ask4": (f(field.AskPrice4), field.AskVolume4),
-                "bid4": (f(field.BidPrice4), field.BidVolume4),
-                "ask5": (f(field.AskPrice5), field.AskVolume5),
-                "bid5": (f(field.BidPrice5), field.BidVolume5)})
+                "ask1": (FILTER(field.AskPrice1), field.AskVolume1),
+                "bid1": (FILTER(field.BidPrice1), field.BidVolume1),
+                "ask2": (FILTER(field.AskPrice2), field.AskVolume2),
+                "bid2": (FILTER(field.BidPrice2), field.BidVolume2),
+                "ask3": (FILTER(field.AskPrice3), field.AskVolume3),
+                "bid3": (FILTER(field.BidPrice3), field.BidVolume3),
+                "ask4": (FILTER(field.AskPrice4), field.AskVolume4),
+                "bid4": (FILTER(field.BidPrice4), field.BidVolume4),
+                "ask5": (FILTER(field.AskPrice5), field.AskVolume5),
+                "bid5": (FILTER(field.BidPrice5), field.BidVolume5)})
 
     def unsubscribe(self, codes):
         self.resetCompletion()
@@ -205,22 +209,18 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self.notifyCompletion()
 
     def _getInstruments(self):
-        self._map_code_to_exchange = {}
         file_path = DATA_DIR + "instruments.dat"
         now_date = time.strftime("%Y-%m-%d", time.localtime())
         if os.path.exists(file_path):
             fd = open(file_path)
-            lines = fd.readlines()
+            cached_date = fd.readline()
+            if cached_date[: -1] == now_date:
+                self._instruments = json.load(fd)
+                fd.close()
+                logging.info("已加载全部共%d个合约..." % len(self._instruments))
+                return
             fd.close()
-            if len(lines) > 0:
-                cached_date = lines[0][: -1]
-                if cached_date == now_date:
-                    for line in lines[1: ]:
-                        (code, exchange) = line.split("@")
-                        assert(code not in self._map_code_to_exchange)
-                        self._map_code_to_exchange[code] = exchange[: -1]
-                    logging.info("已加载所有合约...")
-                    return
+        self._instruments = {}
         self.resetCompletion()
         self._limitFrequency()
         self.checkApiReturn(self.ReqQryInstrument(CTPStruct.QryInstrumentField(), 3))
@@ -230,17 +230,16 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 self.waitCompletion("获取所有合约")
                 break
             except TimeoutError as e:
-                count = len(self._map_code_to_exchange)
+                count = len(self._instruments)
                 if count == last_count:
                     raise e
                 logging.info("已获取%d个合约..." % count)
                 last_count = count
         fd = open(file_path, "w")
         fd.write(now_date + "\n")
-        for code in self._map_code_to_exchange:
-            fd.write("%s@%s\n" % (code, self._map_code_to_exchange[code]))
+        json.dump(self._instruments, fd)
         fd.close()
-        logging.info("已保存所有合约...")
+        logging.info("已保存全部共%d个合约..." % len(self._instruments))
 
     def OnRspQryInstrument(self, field, info, req_id, is_last):
         assert(req_id == 3)
@@ -248,9 +247,22 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             assert(is_last)
             return
         if field:
-            self._map_code_to_exchange[field.InstrumentID] = field.ExchangeID
+            if field.OptionsType == '1':        #THOST_FTDC_CP_CallOptions
+                option_type = "call"
+            elif field.OptionsType == '2':      #THOST_FTDC_CP_PutOptions
+                option_type = "put"
+            else:
+                option_type = None
+            expire_date = time.strftime("%Y-%m-%d", time.strptime(field.ExpireDate, "%Y%m%d"))
+            self._instruments[field.InstrumentID] = {"name": field.InstrumentName,
+                    "exchange": field.ExchangeID, "multiple": field.VolumeMultiple,
+                    "price_tick": field.PriceTick, "expire_date": expire_date,
+                    "long_margin_ratio": FILTER(field.LongMarginRatio),
+                    "short_margin_ratio": FILTER(field.ShortMarginRatio),
+                    "option_type": option_type, "strike_price": FILTER(field.StrikePrice),
+                    "is_trading": bool(field.IsTrading)}
         if is_last:
-            logging.info("已获取所有合约...")
+            logging.info("已获取全部共%d个合约..." % len(self._instruments))
             self.notifyCompletion()
 
     def getAccount(self):
@@ -268,7 +280,8 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         assert(is_last)
         if not self.checkRspInfoInCallback(info):
             return
-        self._account = {"balance": field.Balance, "margin": field.CurrMargin, "available": field.Available}
+        self._account = {"balance": field.Balance, "margin": field.CurrMargin,
+                "available": field.Available}
         logging.info("已获取资金账户...")
         self.notifyCompletion()
 
@@ -296,7 +309,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         is_active = order.OrderStatus not in ('0', '5')
         assert(oid not in self._orders)
         self._orders[oid] = {"code": order.InstrumentID, "direction": direction,
-                "price": order.LimitPrice, "volume": volume, 
+                "price": order.LimitPrice, "volume": volume,
                 "volume_traded": order.VolumeTraded, "is_active": is_active}
 
     def OnRspQryOrder(self, field, info, req_id, is_last):
@@ -384,9 +397,9 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         return False
 
     def _order(self, code, direction, volume, price, min_volume):
-        if code not in self._map_code_to_exchange:
+        if code not in self._instruments:
             raise ValueError("合约<%s>不存在！" % code)
-        exchange = self._map_code_to_exchange[code]
+        exchange = self._instruments[code]["exchange"]
         if direction == "long":
             direction = 0               #THOST_FTDC_D_Buy
         elif direction == "short":
@@ -473,7 +486,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             return True
         #THOST_FTDC_OST_AllTraded = 0, THOST_FTDC_OST_Canceled = 5
         if order.OrderStatus in ('0', '5'):
-            logging.info("已撤销限价单（单号：<%s>）" % self._order_id)
+            logging.info("已撤销限价单，单号：<%s>" % self._order_id)
             self.notifyCompletion()
             return True
         return False
@@ -481,15 +494,15 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
     def deleteOrder(self, order_id):
         items = order_id.split("@")
         if len(items) != 2:
-            raise ValueError("order ID '%s' is in wrong format" % order_id)
+            raise ValueError("订单号<%s>格式错误" % order_id)
         (sys_id, code) = items
-        if code not in self._map_code_to_exchange:
-            raise ValueError("code '%s' of order ID '%s' not exists" % (code, order_id))
-        exchange = self._map_code_to_exchange[code]
+        if code not in self._instruments:
+            raise ValueError("订单号<%s>中的合约号<%s>不存在" % (order_id, code))
         field = CTPStruct.InputOrderActionField(BrokerID = self._broker_id,
                 InvestorID = self._user_id, UserID = self._user_id,
                 ActionFlag = '0',               #THOST_FTDC_AF_Delete
-                ExchangeID = exchange, InstrumentID = code, OrderSysID = sys_id)
+                ExchangeID = self._instruments[code]["exchange"],
+                InstrumentID = code, OrderSysID = sys_id)
         self.resetCompletion()
         self._order_id = order_id
         self._order_action = self._handleDeleteOrder
@@ -517,12 +530,17 @@ class Client:
 
     def subscribe(self, codes):
         for code in codes:
-            if code not in self._td._map_code_to_exchange:
+            if code not in self._td._instruments:
                 raise ValueError("合约<%s>不存在" % code)
         self._md.subscribe(codes)
 
     def unsubscribe(self, codes):
         self._md.unsubscribe(codes)
+
+    def getInstrument(self, code):
+        if code not in self._td._instruments:
+            raise ValueError("合约<%s>不存在" % code)
+        return self._td._instruments[code].copy()
 
     def getAccount(self):
         return self._td.getAccount()

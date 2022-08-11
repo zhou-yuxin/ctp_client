@@ -42,7 +42,7 @@ def setReceiver(self, func)
 ```
 func是一个可调用体（比如函数或者实现了__call__()接口的对象），能接收一个参数。设置行情接收器后，当服务器有新的行情推送时，func就会被调用，参数为一个dict，为一条新的行情数据，包含如下字段：
 |  字段               |  类型           |  含义                   |
-| :------------------ | :------------- | :-----------------------|
+| :------------------ | :------------- | :---------------------- |
 |  code               |  str           |  合约代码                |
 |  price              |  float         |  最新价                  |
 |  open               |  float         |  开盘价                  |
@@ -70,6 +70,37 @@ func是一个可调用体（比如函数或者实现了__call__()接口的对象
 |  bid5               |  (float, int)  |  第五档买盘（价格x数量）  |
 
 注意，有些字段可能为None，表示当前没有值。比如收盘前close、settlement就是None。另外，通常期货只有第一档摆盘有数据，因此ask2、bid2等其他档的价格也为None。
+
+### >>> 查询合约
+```
+def getInstrument(self, code)
+```
+返回一个dict，包含如下字段：
+|  字段                |  类型    |  含义                 |
+| :------------------- | :------ | :-------------------- |
+|  name                |  str    |  合约名称              |
+|  exchange            |  str    |  交易所代码            |
+|  multiple            |  float  |  合约乘数              |
+|  price_tick          |  float  |  最小变动价位          |
+|  expire_date         |  str    |  到期日（YYYY-MM-DD）  |
+|  long_margin_ratio   |  float  |  多头保证金率          |
+|  short_margin_ratio  |  float  |  空头保证金率          |
+|  option_type         |  str    |  期权类型              |
+|  strike_price        |  float  |  行权价                |
+|  is_trading          |  bool   |  当前是否可交易         |
+
+注意，如果合约是期货，则option_type为None，否则为call或put之一。一般而言，只有期货有有效的xxx_margin_ratio，对于期权其值为None。
+
+### >>> 查询资金账户
+```
+def getAccount(self)
+```
+返回一个dict，包含如下字段：
+|  字段       |  类型   |  含义        |
+| :---------- | :------ | :---------- |
+|  balance    |  float  |  总权益      |
+|  margin     |  float  |  占用保证金  |
+|  available  |  float  |  可用资金    |
 
 ### >>> 查询持仓
 ```
