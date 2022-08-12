@@ -253,7 +253,8 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 option_type = "put"
             else:
                 option_type = None
-            expire_date = time.strftime("%Y-%m-%d", time.strptime(field.ExpireDate, "%Y%m%d"))
+            expire_date = None if field.ExpireDate == "" else       \
+                    time.strftime("%Y-%m-%d", time.strptime(field.ExpireDate, "%Y%m%d"))
             self._instruments[field.InstrumentID] = {"name": field.InstrumentName,
                     "exchange": field.ExchangeID, "multiple": field.VolumeMultiple,
                     "price_tick": field.PriceTick, "expire_date": expire_date,
