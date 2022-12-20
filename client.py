@@ -282,7 +282,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         if not self.checkRspInfoInCallback(info):
             return
         self._account = {"balance": field.Balance, "margin": field.CurrMargin,
-                "available": field.Available}
+                "available": field.Available, "withdraw": field.WithdrawQuota}
         logging.info("已获取资金账户...")
         self.notifyCompletion()
 
