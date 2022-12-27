@@ -147,8 +147,6 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self._auth_code = auth_code
         self._user_id = user_id
         self._password = password
-        self._front_id = None
-        self._session_id = None
         self._order_action = None
         self._order_ref = 0
         flow_dir = DATA_DIR + "td_flow/"
@@ -161,6 +159,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self.waitCompletion("登录交易会话")
         del self._app_id, self._auth_code, self._password
         self._getInstruments()
+        self._getTransferRegisters()
 
     def _limitFrequency(self):
         delta = time.time() - self._last_query_time
@@ -221,9 +220,10 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 return
             fd.close()
         self._instruments = {}
+        field = CTPStruct.QryInstrumentField()
         self.resetCompletion()
         self._limitFrequency()
-        self.checkApiReturn(self.ReqQryInstrument(CTPStruct.QryInstrumentField(), 3))
+        self.checkApiReturn(self.ReqQryInstrument(field, 3))
         last_count = 0
         while True:
             try:
@@ -266,18 +266,66 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             logging.info("已获取全部共%d个合约..." % len(self._instruments))
             self.notifyCompletion()
 
+    def getInstrument(self, code):
+        if code not in self._instruments:
+            raise ValueError("合约<%s>不存在" % code)
+        return self._instruments[code].copy()
+
+    def _getTransferRegisters(self):
+        self._bank_names = {}
+        field = CTPStruct.QryContractBankField(BrokerID = self._broker_id)
+        self.resetCompletion()
+        self._limitFrequency()
+        self.checkApiReturn(self.ReqQryContractBank(field, 4))
+        self.waitCompletion("获取期货公司支持的银行")
+        self._trans_regs = []
+        field = CTPStruct.QryAccountregisterField(BrokerID = self._broker_id,
+                AccountID = self._user_id)
+        self.resetCompletion()
+        self._limitFrequency()
+        self.checkApiReturn(self.ReqQryAccountregister(field, 5))
+        self.waitCompletion("获取银期转账签约关系")
+        del self._bank_names
+
+    def OnRspQryContractBank(self, field, info, req_id, is_last):
+        assert(req_id == 4)
+        if not self.checkRspInfoInCallback(info):
+            assert(is_last)
+            return
+        if field:
+            self._bank_names[field.BankID] = field.BankName
+        if is_last:
+            logging.info("已获取期货公司支持的银行...")
+            self.notifyCompletion()
+
+    def OnRspQryAccountregister(self, field, info, req_id, is_last):
+        assert(req_id == 5)
+        if not self.checkRspInfoInCallback(info):
+            assert(is_last)
+            return
+        if field and field.OpenOrDestroy == "1":    #THOST_FTDC_OOD_Open = 1
+            assert(field.BrokerID == self._broker_id)
+            assert(field.AccountID == self._user_id)
+            self._trans_regs.append({"bank_name": self._bank_names[field.BankID],
+                    "bank_id": field.BankID, "bank_branch_id": field.BankBranchID,
+                    "bank_account": field.BankAccount, "currency": field.CurrencyID,
+                    "broker_branch_id": field.BrokerBranchID})
+        if is_last:
+            logging.info("已获取银期转账签约关系...")
+            self.notifyCompletion()
+
     def getAccount(self):
         #THOST_FTDC_BZTP_Future = 1
         field = CTPStruct.QryTradingAccountField(BrokerID = self._broker_id,
                 InvestorID = self._user_id, CurrencyID = "CNY", BizType = '1')
         self.resetCompletion()
         self._limitFrequency()
-        self.checkApiReturn(self.ReqQryTradingAccount(field, 8))
+        self.checkApiReturn(self.ReqQryTradingAccount(field, 6))
         self.waitCompletion("获取资金账户")
         return self._account
 
     def OnRspQryTradingAccount(self, field, info, req_id, is_last):
-        assert(req_id == 8)
+        assert(req_id == 6)
         assert(is_last)
         if not self.checkRspInfoInCallback(info):
             return
@@ -292,7 +340,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 InvestorID = self._user_id)
         self.resetCompletion()
         self._limitFrequency()
-        self.checkApiReturn(self.ReqQryOrder(field, 4))
+        self.checkApiReturn(self.ReqQryOrder(field, 7))
         self.waitCompletion("获取所有报单")
         return self._orders
 
@@ -314,7 +362,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 "volume_traded": order.VolumeTraded, "is_active": is_active}
 
     def OnRspQryOrder(self, field, info, req_id, is_last):
-        assert(req_id == 4)
+        assert(req_id == 7)
         if not self.checkRspInfoInCallback(info):
             assert(is_last)
             return
@@ -330,7 +378,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 InvestorID = self._user_id)
         self.resetCompletion()
         self._limitFrequency()
-        self.checkApiReturn(self.ReqQryInvestorPosition(field, 5))
+        self.checkApiReturn(self.ReqQryInvestorPosition(field, 8))
         self.waitCompletion("获取所有持仓")
         return self._positions
 
@@ -350,7 +398,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                     "cost": position.OpenCost})
 
     def OnRspQryInvestorPosition(self, field, info, req_id, is_last):
-        assert(req_id == 5)
+        assert(req_id == 8)
         if not self.checkRspInfoInCallback(info):
             assert(is_last)
             return
@@ -448,11 +496,11 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 ForceCloseReason = '0',         #THOST_FTDC_FCC_NotForceClose
                 OrderRef = "%12d" % self._order_ref)
         self.resetCompletion()
-        self.checkApiReturn(self.ReqOrderInsert(field, 6))
+        self.checkApiReturn(self.ReqOrderInsert(field, 9))
         self.waitCompletion("录入报单")
 
     def OnRspOrderInsert(self, field, info, req_id, is_last):
-        assert(req_id == 6)
+        assert(req_id == 9)
         assert(is_last)
         self.OnErrRtnOrderInsert(field, info)
 
@@ -507,17 +555,78 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self.resetCompletion()
         self._order_id = order_id
         self._order_action = self._handleDeleteOrder
-        self.checkApiReturn(self.ReqOrderAction(field, 7))
+        self.checkApiReturn(self.ReqOrderAction(field, 10))
         self.waitCompletion("撤销报单")
 
     def OnRspOrderAction(self, field, info, req_id, is_last):
-        assert(req_id == 7)
+        assert(req_id == 10)
         assert(is_last)
         self.OnErrRtnOrderAction(field, info)
 
     def OnErrRtnOrderAction(self, _, info):
         success = self.checkRspInfoInCallback(info)
         assert(not success)
+
+    def transfer(self, money, password, bank_name = None, bank_account = None):
+        if money == 0:
+            return
+        found = False
+        if bank_account:
+            for reg in self._trans_regs:
+                if reg["bank_account"] == bank_account:
+                    if bank_name and reg["bank_name"] != bank_name:
+                        raise ValueError("银行账号<%s>属于<%s>，而不是<%s>" %
+                                (bank_account, reg["bank_name"], bank_name))
+                    found = True
+                    break
+            if not found:
+                raise ValueError("找不到银行账号<%s>的银期签约关系" % bank_account)
+        elif bank_name:
+            for reg in self._trans_regs:
+                if reg["bank_name"] == bank_name:
+                    found = True
+                    break
+            if not found:
+                raise ValueError("找不到与<%s>的银期签约关系" % bank_name)
+        else:
+            raise ValueError("参数<bank_name>和<bank_account>至少填写一个")
+        field = CTPStruct.ReqTransferField(AccountID = self._user_id,
+                BrokerID = self._broker_id, BrokerBranchID = reg["broker_branch_id"],
+                BankID = reg["bank_id"], BankBranchID = reg["bank_branch_id"],
+                BankAccount = reg["bank_account"], Password = password,
+                CurrencyID = reg["currency"], TradeAmount = abs(money),
+                VerifyCertNoFlag = "1",             #THOST_FTDC_YNI_No
+                CustType = "\0", IdCardType = "\0",
+                BankAccType = "\0", BankSecuAccType = "\0", FeePayFlag = "\0",
+                SecuPwdFlag = "\0", BankPwdFlag = "\0",
+                TransferStatus = "\0", LastFragment = "\0")
+        self.resetCompletion()
+        if money > 0:
+            self.ReqFromBankToFutureByFuture(field, 11)
+            self.waitCompletion("银期转账（银行->期货）")
+        else:
+            self.ReqFromFutureToBankByFuture(field, 12)
+            self.waitCompletion("银期转账（期货->银行）")
+
+    def OnRspFromBankToFutureByFuture(self, _, info, req_id, is_last):
+        assert(req_id == 11)
+        assert(is_last)
+        success = self.checkRspInfoInCallback(info)
+        assert(not success)
+
+    def OnRtnFromBankToFutureByFuture(self, field):
+        logging.debug(field)
+        self.notifyCompletion(None if field.ErrorID == 0 else field.ErrorMsg)
+
+    def OnRspFromFutureToBankByFuture(self, _, info, req_id, is_last):
+        assert(req_id == 12)
+        assert(is_last)
+        success = self.checkRspInfoInCallback(info)
+        assert(not success)
+
+    def OnRtnFromFutureToBankByFuture(self, field):
+        logging.debug(field)
+        self.notifyCompletion(None if field.ErrorID == 0 else field.ErrorMsg)
 
 
 class Client:
@@ -539,9 +648,7 @@ class Client:
         self._md.unsubscribe(codes)
 
     def getInstrument(self, code):
-        if code not in self._td._instruments:
-            raise ValueError("合约<%s>不存在" % code)
-        return self._td._instruments[code].copy()
+        return self._td.getInstrument(code)
 
     def getAccount(self):
         return self._td.getAccount()
@@ -566,3 +673,9 @@ class Client:
 
     def deleteOrder(self, order_id):
         self._td.deleteOrder(order_id)
+
+    def transferFromBank(self, money, password, bank_name = None, bank_account = None):
+        self._td.transfer(abs(money), password, bank_name, bank_account)
+
+    def transferToBank(self, money, password, bank_name = None, bank_account = None):
+        self._td.transfer(-abs(money), password, bank_name, bank_account)
