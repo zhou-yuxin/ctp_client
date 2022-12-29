@@ -616,7 +616,11 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
 
     def OnRtnFromBankToFutureByFuture(self, field):
         logging.debug(field)
-        self.notifyCompletion(None if field.ErrorID == 0 else field.ErrorMsg)
+        if field.ErrorID == 0:
+            logging.info("已完成银期转账（银行->期货）")
+            self.notifyCompletion()
+        else:
+            self.notifyCompletion(field.ErrorMsg)
 
     def OnRspFromFutureToBankByFuture(self, _, info, req_id, is_last):
         assert(req_id == 12)
@@ -626,7 +630,11 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
 
     def OnRtnFromFutureToBankByFuture(self, field):
         logging.debug(field)
-        self.notifyCompletion(None if field.ErrorID == 0 else field.ErrorMsg)
+        if field.ErrorID == 0:
+            logging.info("已完成银期转账（期货->银行）")
+            self.notifyCompletion()
+        else:
+            self.notifyCompletion(field.ErrorMsg)
 
 
 class Client:
