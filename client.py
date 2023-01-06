@@ -64,7 +64,6 @@ class QuoteImpl(SpiHelper, CTP.MdApiPy):
         self.waitCompletion("登录行情会话")
 
     def __del__(self):
-        self.Release()
         logging.info("已登出行情服务器...")
 
     def OnFrontConnected(self):
@@ -168,7 +167,6 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         self._last_query_time = time.time()
 
     def __del__(self):
-        self.Release()
         logging.info("已登出交易服务器...")
 
     def OnFrontConnected(self):
