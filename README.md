@@ -101,6 +101,7 @@ def getAccount(self)
 |  balance    |  float  |  总权益      |
 |  margin     |  float  |  占用保证金  |
 |  available  |  float  |  可用资金    |
+|  withdraw   |  float  |  可取资金    |
 
 ### >>> 查询持仓
 ```
@@ -160,3 +161,10 @@ FOK（Fill or Kill）是一种特殊的报单类型，该报单被交易所接�
 def orderMarket(self, code, direction, volume)
 ```
 市价单不指定价格，而是以当前市场价格成交，能成交多少就成交多少，剩余未成交的撤单。返回成交数量，介于[0, volume]之间。
+
+### >>> 银期转账
+```
+def transferFromBank(self, money, password, bank_name = None, bank_account = None)
+def transferToBank(self, money, password, bank_name = None, bank_account = None)
+```
+两个接口只是转账方向不同。money为转账金额，password是资金密码。如果指定了银行账号bank_account，那么忽略bank_name。如果指定bank_name，那么会从银期签约关系中查找该银行的账户（比如“工商银行”、“兴业银行”...）
