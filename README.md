@@ -167,4 +167,4 @@ def orderMarket(self, code, direction, volume)
 def transferFromBank(self, money, password, bank_name = None, bank_account = None)
 def transferToBank(self, money, password, bank_name = None, bank_account = None)
 ```
-两个接口只是转账方向不同。money为转账金额，password是资金密码。如果指定了银行账号bank_account，那么忽略bank_name。如果指定bank_name，那么会从银期签约关系中查找该银行的账户（比如“工商银行”、“兴业银行”...）
+两个接口只是转账方向不同。money为转账金额，password是资金密码。如果指定了银行账号bank_account，那么忽略bank_name。如果指定bank_name，那么会从银期签约关系中查找该银行的账户（比如“工商银行”、“兴业银行”...）。
