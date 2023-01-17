@@ -173,20 +173,20 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         logging.info("已连接交易服务器...")
         field = CTPStruct.ReqAuthenticateField(BrokerID = self._broker_id,
                 AppID = self._app_id, AuthCode = self._auth_code, UserID = self._user_id)
-        self.checkApiReturnInCallback(self.ReqAuthenticate(field, 0))
+        self.checkApiReturnInCallback(self.ReqAuthenticate(field, 1))
 
     def OnRspAuthenticate(self, _, info, req_id, is_last):
-        assert(req_id == 0)
+        assert(req_id == 1)
         assert(is_last)
         if not self.checkRspInfoInCallback(info):
             return
         logging.info("已通过交易终端认证...")
         field = CTPStruct.ReqUserLoginField(BrokerID = self._broker_id,
                 UserID = self._user_id, Password = self._password)
-        self.checkApiReturnInCallback(self.ReqUserLogin(field, 1))
+        self.checkApiReturnInCallback(self.ReqUserLogin(field, 0))
 
     def OnRspUserLogin(self, field, info, req_id, is_last):
-        assert(req_id == 1)
+        assert(req_id == 0)
         assert(is_last)
         if not self.checkRspInfoInCallback(info):
             return
