@@ -168,3 +168,9 @@ def transferFromBank(self, money, password, bank_name = None, bank_account = Non
 def transferToBank(self, money, password, bank_name = None, bank_account = None)
 ```
 两个接口只是转账方向不同。money为转账金额，password是资金密码。如果指定了银行账号bank_account，那么忽略bank_name。如果指定bank_name，那么会从银期签约关系中查找该银行的账户（比如“工商银行”、“兴业银行”...）。
+
+### >>> 获取结算单
+```
+def getSettlement(self, date, encoding = "gbk")
+```
+获取结算单，其中date是结算单日期，格式为yyyymmdd，比如2023年04月06日就是“20230406”。如果要获取月结算单，那么格式为yyyymm，比如2023年03月就是“202303”。encoding是期货公司后来返回数据的编码，默认gbk。返回表示结算单内容的字符串。
