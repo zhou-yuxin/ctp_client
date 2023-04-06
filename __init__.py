@@ -600,10 +600,10 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
                 TransferStatus = "\0", LastFragment = "\0")
         self.resetCompletion()
         if money > 0:
-            self.ReqFromBankToFutureByFuture(field, 11)
+            self.checkApiReturn(self.ReqFromBankToFutureByFuture(field, 11))
             self.waitCompletion("银期转账（银行->期货）")
         else:
-            self.ReqFromFutureToBankByFuture(field, 12)
+            self.checkApiReturn(self.ReqFromFutureToBankByFuture(field, 12))
             self.waitCompletion("银期转账（期货->银行）")
 
     def OnRspFromBankToFutureByFuture(self, _, info, req_id, is_last):
@@ -613,7 +613,6 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         assert(not success)
 
     def OnRtnFromBankToFutureByFuture(self, field):
-        logging.debug(field)
         if field.ErrorID == 0:
             logging.info("已完成银期转账（银行->期货）")
             self.notifyCompletion()
@@ -627,12 +626,36 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
         assert(not success)
 
     def OnRtnFromFutureToBankByFuture(self, field):
-        logging.debug(field)
         if field.ErrorID == 0:
             logging.info("已完成银期转账（期货->银行）")
             self.notifyCompletion()
         else:
             self.notifyCompletion(field.ErrorMsg)
+
+    def getSettlement(self, date, encoding):
+        field = CTPStruct.QrySettlementInfoField(BrokerID = self._broker_id,
+                InvestorID = self._user_id, TradingDay = date)
+        self._settlement = bytes()
+        self._encoding = encoding
+        self.resetCompletion()
+        self._limitFrequency()
+        self.checkApiReturn(self.ReqQrySettlementInfo(field, 13))
+        self.waitCompletion("获取结算单")
+        return self._settlement.decode(encoding)
+
+    def OnRspQrySettlementInfo(self, field, info, req_id, is_last):
+        assert(req_id == 13)
+        if not self.checkRspInfoInCallback(info):
+            return
+        if field:
+            content = field.Content
+            if isinstance(content, str):
+                content = content.encode(self._encoding)
+            assert(isinstance(content, bytes))
+            self._settlement += content
+        if is_last:
+            logging.info("已获取结算单...")
+            self.notifyCompletion()
 
 
 class Client:
@@ -685,3 +708,6 @@ class Client:
 
     def transferToBank(self, money, password, bank_name = None, bank_account = None):
         self._td.transfer(-abs(money), password, bank_name, bank_account)
+
+    def getSettlement(self, date, encoding = "gbk"):
+        return self._td.getSettlement(date, encoding)
