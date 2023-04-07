@@ -633,10 +633,11 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             self.notifyCompletion(field.ErrorMsg)
 
     def getSettlement(self, date, encoding):
+        self._date = date
+        self._encoding = encoding
+        self._settlement = bytes()
         field = CTPStruct.QrySettlementInfoField(BrokerID = self._broker_id,
                 InvestorID = self._user_id, TradingDay = date)
-        self._settlement = bytes()
-        self._encoding = encoding
         self.resetCompletion()
         self._limitFrequency()
         self.checkApiReturn(self.ReqQrySettlementInfo(field, 13))
@@ -654,7 +655,7 @@ class TraderImpl(SpiHelper, CTP.TraderApiPy):
             assert(isinstance(content, bytes))
             self._settlement += content
         if is_last:
-            logging.info("已获取结算单...")
+            logging.info("已获取%s的结算单..." % self._date)
             self.notifyCompletion()
 
 
